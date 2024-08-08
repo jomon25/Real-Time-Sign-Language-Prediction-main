@@ -1,0 +1,105 @@
+import numpy as np
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, BatchNormalization
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import ModelCheckpoint
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+
+# Load preprocessed data
+data = np.load("/content/drive/MyDrive/preprocessed_data.npz")
+X_train, X_test, y_train, y_test = data['X_train'], data['X_test'], data['y_train'], data['y_test']
+
+# Map alphabet labels to numeric values
+label_map = {'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4, 'F': 5, 'G': 6, 'H': 7, 'I': 8, 'J': 9,
+             'K': 10, 'L': 11, 'M': 12, 'N': 13, 'O': 14, 'P': 15, 'Q': 16, 'R': 17, 'S': 18,
+             'T': 19, 'U': 20, 'V': 21, 'W': 22, 'X': 23, 'Y': 24, 'Z': 25}
+
+# Convert string labels to numeric labels
+y_train_numeric = np.array([label_map[label] for label in y_train])
+y_test_numeric = np.array([label_map[label] for label in y_test])
+
+# Convert numeric labels to categorical format
+num_classes = 26  # Assuming you have 26 classes for alphabets
+y_train_categorical = to_categorical(y_train_numeric, num_classes=num_classes)
+y_test_categorical = to_categorical(y_test_numeric, num_classes=num_classes)
+
+# Model parameters
+batch_size = 128
+
+# Split the preprocessed data into training and validation sets
+X_train, X_val, y_train_cat, y_val_cat = train_test_split(X_train, y_train_categorical, test_size=0.2, random_state=42)
+
+
+# Data augmentation
+datagen = ImageDataGenerator(
+    rotation_range=20,
+    width_shift_range=0.1,
+    height_shift_range=0.1,
+    shear_range=0.1,
+    zoom_range=0.1,
+    horizontal_flip=True,
+    fill_mode='nearest'
+)
+
+# Fit the data generator to your training data
+datagen.fit(X_train)
+
+# Define the model
+model = Sequential()
+
+# Add Convolutional layers with MaxPooling, BatchNormalization, and Dropout
+model.add(Conv2D(64, (3, 3), activation='relu', input_shape=(64, 64, 3)))  # Update input shape to accept 3 channels
+model.add(MaxPooling2D((2, 2)))
+model.add(BatchNormalization())
+model.add(Dropout(0.25))
+
+model.add(Conv2D(64, (3, 3), activation='relu'))
+model.add(MaxPooling2D((2, 2)))
+model.add(BatchNormalization())
+model.add(Dropout(0.25))
+
+model.add(Conv2D(64, (3, 3), activation='relu'))  # Additional Conv2D layer
+model.add(MaxPooling2D((2, 2)))
+model.add(BatchNormalization())
+model.add(Dropout(0.25))
+
+model.add(Flatten())
+
+# Add Dense layers with Dropout
+model.add(Dense(128, activation='relu'))
+model.add(Dropout(0.5))
+
+model.add(Dense(num_classes, activation='softmax'))
+
+# Compile the model
+opt = Adam(learning_rate=0.0001)
+model.compile(optimizer=opt, loss='categorical_crossentropy', metrics=['accuracy'])
+
+# Define ModelCheckpoint callback
+checkpoint = ModelCheckpoint('/content/drive/MyDrive/asl_sequential_best_weights.keras', save_best_only=True, monitor='val_accuracy', mode='max')
+
+# Train the model with data augmentation
+history = model.fit(
+    datagen.flow(X_train, y_train_cat, batch_size=batch_size),
+    epochs=50,
+    validation_data=(X_val, y_val_cat),
+    callbacks=[checkpoint]
+)
+
+
+# Evaluate the model
+test_loss, test_accuracy = model.evaluate(X_test, y_test_categorical)
+print("Test Accuracy:", test_accuracy)
+
+# Save the model
+model.save('/content/drive/MyDrive/sign_language_model_sequential1.h5')
+
+# Save the model architecture as JSON
+model_json = model.to_json()
+with open("/content/drive/MyDrive/sign_language_model_sequential_64x64_with_augmentation.json", "w") as json_file:
+    json_file.write(model_json)
+
+# Save the training history
+np.savez('/content/drive/MyDrive/training_history_sequential_64x64_with_augmentation.npz', history=history.history)
